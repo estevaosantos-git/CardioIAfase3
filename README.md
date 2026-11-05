@@ -6,9 +6,9 @@
 
 <br>
 
-Cardio Ia - fase 3
+### Cardio Ia - fase 3
 
-## Nome do grupo
+## Grupo 40
 
 ## 👨‍🎓 Integrantes: 
 - Estevão Ferreira Santos  RM567522
