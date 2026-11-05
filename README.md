@@ -8,6 +8,7 @@
   <a href="#como-executar">Como executar</a>
 </p>
 
+
 ## Sobre o projeto
 
 O **CardioIA** reproduz, em ambiente simulado, etapas comuns de uma solução de Internet das Coisas (IoT) para acompanhamento de sinais vitais. Um **ESP32** recebe uma temperatura de um sensor **DHT22** e cliques de um **botão**, que representam pulsos cardíacos. Na segunda parte, calcula uma frequência cardíaca simulada em batimentos por minuto (BPM), transmite as amostras por **MQTT** e as apresenta em uma interface web.
@@ -225,15 +226,12 @@ Os limites são **estritamente maiores** que 120 BPM e 38 °C. Valores exatament
 - **Broker público:** a conexão MQTT de demonstração não utiliza autenticação nem criptografia. **Nunca transmita dados pessoais ou de saúde reais por esse tópico.**
 - **Colisões de tópico:** várias instâncias usando o mesmo tópico podem misturar os resultados. Para testes independentes, altere o tópico no sketch e no nó MQTT do Node-RED.
 - **Dependência local:** o painel funciona enquanto a instância local do Node-RED estiver em execução.
+  
+## Integrantes
 
-## Possíveis evoluções
-
-- Integrar sensores físicos apropriados e validar a calibração dos sinais.
-- Usar MQTT autenticado com **TLS** e tópicos por dispositivo.
-- Armazenar medições em banco de dados com histórico persistente.
-- Criar autenticação e controle de acesso para o painel.
-- Adicionar testes automatizados para processamento, duplicatas e reconexão.
-- Implementar análises estatísticas ou modelos de IA **somente após** definir dados, objetivos e critérios de validação adequados.
+- Estevão Ferreira Santos  RM567522
+- Murilo Ferreira Borges  RM567738
+- Guilherme Pinheiro Carlsson Cury  RM564011
 
 ## Documentação e referências
 
