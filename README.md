@@ -237,8 +237,8 @@ Os limites são **estritamente maiores** que 120 BPM e 38 °C. Valores exatament
 
 **Arquivos do projeto:**
 
-- [`Parte1/Relatorio-Parte-1.docx`](Parte1/Relatorio-Parte-1.pdf) — coleta local, falha simulada e memória offline.
-- [`Parte2/Relatorio-Parte-2.docx`](Parte2/Relatorio-Parte-2.pdf) — MQTT, fila, painel e roteiro de verificação.
+- [`Parte1/Relatorio-Parte-1.pdf`](Parte1/Relatorio-Parte-1.pdf) — coleta local, falha simulada e memória offline.
+- [`Parte2/Relatorio-Parte-2.pdf`](Parte2/Relatorio-Parte-2.pdf) — MQTT, fila, painel e roteiro de verificação.
 - [`Parte2/fluxo-cardioia.json`](Parte2/fluxo-cardioia.json) — fluxo importável do Node-RED.
 
 **Documentação externa:**
