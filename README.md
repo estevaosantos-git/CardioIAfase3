@@ -161,7 +161,7 @@ A página consulta os dados do Node-RED a cada **2 segundos**. Os endpoints forn
 
 ### Exemplo do painel
 
-![Captura do painel CardioIA em teste MQTT](Parte2/Painel-teste-MQTT.png)
+![Captura do painel CardioIA em teste MQTT](assets/Painel-teste-MQTT.png)
 
 *Captura incluída no projeto, obtida em um teste com mensagens MQTT sintéticas. Não representa, por si só, validação completa da comunicação ESP32 → broker → painel.*
 
