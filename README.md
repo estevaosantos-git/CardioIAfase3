@@ -6,7 +6,7 @@
 
 <br>
 
-# Nome do projeto
+Cardio Ia - fase 3
 
 ## Nome do grupo
 
