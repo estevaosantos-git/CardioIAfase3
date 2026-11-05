@@ -1,99 +1,120 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
 #include <DHT.h>
-#include <esp_system.h>
 
-// Mesmo circuito da Parte 1. O botão fecha o GPIO 4 contra o GND.
-constexpr int BOTAO = 4;
-constexpr uint32_t JANELA_MS = 15000;
-constexpr char TOPICO[] = "cardioia/lab-478271631471196161/v1/sinais";
-DHT dht(15, DHT22);
-WiFiClient rede;
-PubSubClient mqtt(rede);
+// ==========================================
+// 1. CONFIGURAÇÕES DOS SENSORES
+// ==========================================
+#define DHTPIN 15
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
 
-struct Amostra {
-  uint32_t seq, tempo, janela, pulsos;
-  float temperatura;
-};
-QueueHandle_t fila;
-char sessao[16];
+#define BOTAO_PIN 4
+int batimentos = 0;
+bool estadoAnteriorBotao = HIGH;
 
-// Esta tarefa continua medindo enquanto a outra tenta se conectar ao broker.
-void coletar(void*) {
-  uint32_t inicio = millis(), alterado = inicio, pulsos = 0, seq = 0;
-  int bruto = HIGH, estavel = HIGH;
-  for (;;) {
-    uint32_t agora = millis();
-    int leitura = digitalRead(BOTAO);
-    if (leitura != bruto) {
-      bruto = leitura;
-      alterado = agora;
-    }
-    if (bruto != estavel && agora - alterado >= 35) {
-      estavel = bruto;
-      if (estavel == LOW) ++pulsos;
-    }
-    uint32_t duracao = agora - inicio;
-    if (duracao >= JANELA_MS) {
-      Amostra a = {++seq, agora, duracao, pulsos, dht.readTemperature()};
-      // Até 120 janelas (cerca de 30 minutos). Fila cheia preserva as anteriores.
-      if (xQueueSend(fila, &a, 0) != pdTRUE)
-        Serial.printf("Fila cheia: amostra %lu descartada\n", (unsigned long)a.seq);
-      inicio = agora;
-      pulsos = 0;
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
+unsigned long tempoAnteriorSensores = 0;
+const long intervaloSensores = 2000; // Lê a temperatura a cada 2 segundos
 
+
+// ==========================================
+// 2. CONFIGURAÇÕES DE WI-FI E MEMÓRIA OFFLINE (NOVO)
+// ==========================================
+bool wifiConectado = true; // Variável que simula se temos internet ou não
+unsigned long tempoAnteriorWiFi = 0;
+
+// Nossa "caderneta" para guardar dados quando estiver sem internet
+const int MAX_DADOS = 50; // Limite de 50 anotações para não travar a memória
+String memoriaOffline[MAX_DADOS]; // O Array (lista) que guarda os textos
+int quantidadeSalva = 0; // Contador de quantas anotações já fizemos
+
+
+// ==========================================
+// 3. SETUP
+// ==========================================
 void setup() {
   Serial.begin(115200);
-  pinMode(BOTAO, INPUT_PULLUP);
   dht.begin();
-  snprintf(sessao, sizeof(sessao), "%08lx", (unsigned long)esp_random());
-  fila = xQueueCreate(120, sizeof(Amostra));
-  if (!fila || xTaskCreate(coletar, "coleta", 4096, nullptr, 1, nullptr) != pdPASS) {
-    Serial.println("Falha ao iniciar a coleta");
-    for (;;) delay(1000);
-  }
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin("Wokwi-GUEST", "", 6);
-  mqtt.setServer("broker.hivemq.com", 1883);
-  mqtt.setSocketTimeout(3);
-  mqtt.setBufferSize(512);
-  Serial.println("Coleta iniciada: uma amostra a cada 15 segundos.");
+  pinMode(BOTAO_PIN, INPUT_PULLUP);
+
+  Serial.println("==================================");
+  Serial.println("Sistema Medico Iniciado.");
+  Serial.println("🌐 [REDE] Wi-Fi Conectado!");
+  Serial.println("==================================");
 }
 
+
+// ==========================================
+// 4. LOOP PRINCIPAL
+// ==========================================
 void loop() {
-  static uint32_t tentativa = 0;
-  if (WiFi.status() != WL_CONNECTED) { delay(20); return; }
-  if (!mqtt.connected()) {
-    if (millis() - tentativa >= 3000) {
-      tentativa = millis();
-      char cliente[32];
-      snprintf(cliente, sizeof(cliente), "cardioia-%s", sessao);
-      if (mqtt.connect(cliente)) Serial.println("MQTT conectado");
-      else Serial.printf("MQTT indisponivel: %d\n", mqtt.state());
-    }
-    delay(10);
-    return;
-  }
-  mqtt.loop();
-  Amostra a;
-  if (xQueuePeek(fila, &a, 0) == pdTRUE) {
-    char temp[16] = "null", mensagem[256];
-    if (isfinite(a.temperatura)) snprintf(temp, sizeof(temp), "%.1f", a.temperatura);
-    // A idade permite reconstruir a ordem temporal de registros reenviados.
-    snprintf(mensagem, sizeof(mensagem),
-      "{\"sessao\":\"%s\",\"seq\":%lu,\"idade_ms\":%lu,\"bpm\":%ld,\"temp_c\":%s}",
-      sessao, (unsigned long)a.seq, (unsigned long)(millis() - a.tempo),
-      lround(60000.0 * a.pulsos / a.janela), temp);
-    if (mqtt.publish(TOPICO, mensagem, false)) {
-      xQueueReceive(fila, &a, 0);
-      Serial.println(mensagem);
+  unsigned long tempoAtual = millis();
+
+  // --- A. SIMULADOR DE QUEDA DE WI-FI (A cada 10 segundos) ---
+  if (tempoAtual - tempoAnteriorWiFi >= 10000) {
+    tempoAnteriorWiFi = tempoAtual;
+    wifiConectado = !wifiConectado; // Inverte o sinal (se estava com internet, agora fica sem)
+
+    if (wifiConectado) {
+      Serial.println("\n🌐 [REDE] Wi-Fi RESTABELECIDO!");
+
+      // Sincronizando os dados que estavam guardados na caderneta
+      if (quantidadeSalva > 0) {
+        Serial.println("🔄 Sincronizando dados retidos...");
+        for (int i = 0; i < quantidadeSalva; i++) {
+          Serial.print("☁️ [ENVIADO PARA NUVEM]: ");
+          Serial.println(memoriaOffline[i]);
+        }
+        quantidadeSalva = 0; // Apaga a caderneta após enviar tudo
+        Serial.println("✅ Sincronizacao concluida. Memoria limpa.\n");
+      }
+    } else {
+      Serial.println("\n❌ [REDE] Wi-Fi CAIU! Entrando em modo offline (Edge Computing).\n");
     }
   }
-  delay(10);
+
+
+  // --- B. LENDO OS BATIMENTOS ---
+  bool estadoAtualBotao = digitalRead(BOTAO_PIN);
+  if (estadoAtualBotao == LOW && estadoAnteriorBotao == HIGH) {
+    batimentos++;
+    String dadoBatimento = "Batimento detectado! Total: " + String(batimentos);
+
+    if (wifiConectado) {
+      Serial.println("☁️ [NUVEM] " + dadoBatimento); // Envia direto
+    } else {
+      // Salva na caderneta se houver espaço
+      if (quantidadeSalva < MAX_DADOS) {
+        memoriaOffline[quantidadeSalva] = dadoBatimento;
+        quantidadeSalva++;
+        Serial.println("💾 [OFFLINE] Batimento salvo na memoria local.");
+      } else {
+        Serial.println("⚠️ [ERRO] Memoria cheia! Dado perdido.");
+      }
+    }
+    delay(50);
+  }
+  estadoAnteriorBotao = estadoAtualBotao;
+
+
+  // --- C. LENDO A TEMPERATURA ---
+  if (tempoAtual - tempoAnteriorSensores >= intervaloSensores) {
+    tempoAnteriorSensores = tempoAtual;
+    float temperatura = dht.readTemperature();
+
+    if (!isnan(temperatura)) {
+      String dadoTemp = "Temperatura: " + String(temperatura) + " °C";
+
+      if (wifiConectado) {
+        Serial.println("☁️ [NUVEM] " + dadoTemp); // Envia direto
+      } else {
+        // Salva na caderneta se houver espaço
+        if (quantidadeSalva < MAX_DADOS) {
+          memoriaOffline[quantidadeSalva] = dadoTemp;
+          quantidadeSalva++;
+          Serial.println("💾 [OFFLINE] Temperatura salva na memoria local.");
+        } else {
+          Serial.println("⚠️ [ERRO] Memoria cheia! Dado perdido.");
+        }
+      }
+    }
+  }
 }
