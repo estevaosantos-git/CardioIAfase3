@@ -1,0 +1,144 @@
+[
+  {
+    "id": "cardiofluxo",
+    "type": "tab",
+    "label": "CardioIA | Monitoramento"
+  },
+  {
+    "id": "cardiobroker",
+    "type": "mqtt-broker",
+    "name": "HiveMQ público",
+    "broker": "broker.hivemq.com",
+    "port": "1883",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true
+  },
+  {
+    "id": "cardioin",
+    "type": "mqtt in",
+    "z": "cardiofluxo",
+    "name": "Telemetria MQTT",
+    "x": 160,
+    "y": 100,
+    "wires": [
+      [
+        "cardioavaliar"
+      ]
+    ],
+    "topic": "cardioia/lab-478271631471196161/v1/sinais",
+    "qos": "0",
+    "datatype": "json",
+    "broker": "cardiobroker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0
+  },
+  {
+    "id": "cardioavaliar",
+    "type": "function",
+    "z": "cardiofluxo",
+    "name": "Validar, avaliar e guardar",
+    "x": 440,
+    "y": 100,
+    "wires": [],
+    "outputs": 0,
+    "func": "const a = msg.payload;\nif (!a || !/^[a-f0-9]{8}$/.test(a.sessao) || !Number.isSafeInteger(a.seq) || a.seq < 1 ||\n    !Number.isSafeInteger(a.idade_ms) || a.idade_ms < 0 ||\n    !Number.isInteger(a.bpm) || a.bpm < 0 ||\n    !(a.temp_c === null || Number.isFinite(a.temp_c))) return null;\nconst pontos = flow.get(\"pontos\") || [];\nif (pontos.some(p => p.sessao === a.sessao && p.seq === a.seq)) return null;\nconst alarmes = [];\nif (a.bpm > 120) alarmes.push(\"frequência acima de 120 BPM\");\nif (a.temp_c > 38) alarmes.push(\"temperatura acima de 38 °C\");\nif (a.temp_c === null) alarmes.push(\"temperatura indisponível\");\npontos.push({sessao:a.sessao, seq:a.seq, t:Date.now()-a.idade_ms, bpm:a.bpm,\n  temp:a.temp_c, alerta:alarmes.join(\" · \")});\npontos.sort((a,b) => a.t-b.t || a.seq-b.seq);\nflow.set(\"pontos\", pontos.slice(-60));\nreturn null;\n"
+  },
+  {
+    "id": "cardiopagina",
+    "type": "http in",
+    "z": "cardiofluxo",
+    "name": "Abrir painel",
+    "x": 160,
+    "y": 200,
+    "wires": [
+      [
+        "cardiotemplate"
+      ]
+    ],
+    "url": "/cardioia",
+    "method": "get",
+    "upload": false
+  },
+  {
+    "id": "cardiotemplate",
+    "type": "template",
+    "z": "cardiofluxo",
+    "name": "Painel CardioIA",
+    "x": 430,
+    "y": 200,
+    "wires": [
+      [
+        "cardiohtml"
+      ]
+    ],
+    "field": "payload",
+    "fieldType": "msg",
+    "format": "html",
+    "syntax": "plain",
+    "template": "<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Monitor CardioIA</title><style>\n*{box-sizing:border-box}body{margin:0;background:#eef3f3;color:#143330;font:16px system-ui,sans-serif}main{max-width:960px;margin:6vh auto;padding:0 20px}h1{font-size:clamp(30px,5vw,48px);margin:0}header p{color:#536766}small{font-weight:700;letter-spacing:.12em}section{margin:15px 0;background:white;padding:22px;border-radius:12px;border:1px solid #d6e1de}h2{font-size:18px;margin:0 0 12px}svg{width:100%;height:210px}svg text{font-size:12px;fill:#506565}meter{height:26px;width:min(100%,380px)}strong{font-size:24px}.ok{border-left:7px solid #207969}.warn{border-left:7px solid #bf5520}.wait{border-left:7px solid #849595}#status{font-weight:650}p{margin:7px 0}</style>\n<main><header><small>CARDIOIA · LABORATÓRIO DE IOT</small><h1>Monitor de sinais simulados</h1><p>DHT22 e botão de pulso · janela de 15 segundos</p></header>\n<section id=\"card\" class=\"wait\" aria-live=\"polite\"><h2>Estado da última leitura</h2><p id=\"status\">Aguardando o ESP32</p><p id=\"hora\"></p></section>\n<section><h2>Frequência cardíaca simulada</h2><strong id=\"bpm\">— BPM</strong><svg viewBox=\"0 0 700 180\" role=\"img\" aria-label=\"Histórico de frequência por horário da coleta\">\n<path d=\"M45 12 V145 H680\" fill=\"none\" stroke=\"#acbebb\"/><line id=\"lim\" x1=\"45\" x2=\"680\" stroke=\"#b65727\" stroke-dasharray=\"4 4\"/><text id=\"limtxt\" x=\"5\">120</text><text x=\"20\" y=\"146\">0</text><polyline id=\"linha\" fill=\"none\" stroke=\"#087a78\" stroke-width=\"3\"/><circle id=\"ultimo\" r=\"4\" fill=\"#087a78\" visibility=\"hidden\"/><text id=\"ini\" x=\"45\" y=\"170\"></text><text id=\"fim\" x=\"680\" y=\"170\" text-anchor=\"end\"></text></svg></section>\n<section><h2>Temperatura simulada</h2><strong id=\"temp\">— °C</strong><br><meter id=\"med\" aria-label=\"Temperatura entre 30 e 45 graus Celsius\" min=\"30\" max=\"45\" high=\"38.01\" optimum=\"36\" hidden></meter><p>Escala do medidor de 30 a 45 °C · alerta acima de 38 °C</p></section></main>\n<script>\nconst el=id=>document.getElementById(id), hora=t=>new Date(t).toLocaleTimeString('pt-BR');\nasync function atualizar(){\n try{\n  const r=await fetch('cardioia/dados',{cache:'no-store'});if(!r.ok)throw Error();\n  const dados=await r.json(), p=dados.pontos, a=p.at(-1);if(!a){el('status').textContent='Aguardando a primeira janela do ESP32';el('card').className='wait';return;}\n  const atraso=dados.agora-a.t>35000;\n  el('status').textContent=(atraso?'Sem dados recentes · última leitura: ':'')+(a.alerta?'Atenção · '+a.alerta:'Dentro dos limites do exercício');\n  el('card').className=atraso||a.alerta?'warn':'ok';\n  el('hora').textContent='Coleta estimada às '+hora(a.t)+' · amostra '+a.seq;\n  el('bpm').textContent=a.bpm+' BPM';el('temp').textContent=a.temp===null?'Indisponível':a.temp.toLocaleString('pt-BR',{minimumFractionDigits:1})+' °C';\n  el('med').hidden=a.temp===null;if(a.temp!==null)el('med').value=a.temp;\n  const inicio=p[0].t, dur=Math.max(1,a.t-inicio), teto=Math.max(150,...p.map(v=>v.bpm));\n  const x=v=>45+635*(v.t-inicio)/dur,y=v=>145-130*v/teto;\n  el('linha').setAttribute('points',p.map(v=>x(v)+','+y(v.bpm)).join(' '));\n  el('ultimo').setAttribute('cx',x(a));el('ultimo').setAttribute('cy',y(a.bpm));el('ultimo').setAttribute('visibility','visible');\n  for(const k of ['y1','y2'])el('lim').setAttribute(k,y(120));el('limtxt').setAttribute('y',y(120)+4);\n  el('ini').textContent=hora(inicio);el('fim').textContent=hora(a.t);\n }catch{el('card').className='warn';el('status').textContent='Sem conexão com o Node-RED';}\n}\nasync function ciclo(){await atualizar();setTimeout(ciclo,2000)}ciclo();\n</script></html>\n",
+    "output": "str"
+  },
+  {
+    "id": "cardiohtml",
+    "type": "http response",
+    "z": "cardiofluxo",
+    "name": "Página HTML",
+    "x": 680,
+    "y": 200,
+    "wires": [],
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    }
+  },
+  {
+    "id": "cardioapi",
+    "type": "http in",
+    "z": "cardiofluxo",
+    "name": "Consultar histórico",
+    "x": 160,
+    "y": 280,
+    "wires": [
+      [
+        "cardiohistorico"
+      ]
+    ],
+    "url": "/cardioia/dados",
+    "method": "get",
+    "upload": false
+  },
+  {
+    "id": "cardiohistorico",
+    "type": "function",
+    "z": "cardiofluxo",
+    "name": "Últimas 60 amostras",
+    "x": 430,
+    "y": 280,
+    "wires": [
+      [
+        "cardiojson"
+      ]
+    ],
+    "outputs": 1,
+    "func": "msg.payload = {agora: Date.now(), pontos: flow.get(\"pontos\") || []};\nreturn msg;"
+  },
+  {
+    "id": "cardiojson",
+    "type": "http response",
+    "z": "cardiofluxo",
+    "name": "Dados do painel",
+    "x": 680,
+    "y": 280,
+    "wires": [],
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-store"
+    }
+  }
+]
